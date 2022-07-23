@@ -21,6 +21,11 @@ To run your application:
 ./gradlew clean run
 ```
 
+To run with docker-compose
+```
+gradle shadowJar && docker-compose up --build --remove-orphans
+```
+
 == Help
 
 * https://vertx.io/docs/[Vert.x Documentation]
