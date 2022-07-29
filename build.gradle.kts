@@ -36,6 +36,7 @@ dependencies {
     implementation("io.vertx:vertx-tcp-eventbus-bridge")
     implementation("io.vertx:vertx-sockjs-service-proxy")
     implementation("io.vertx:vertx-redis-client")
+    implementation("io.vertx:vertx-rabbitmq-client")
     testImplementation("io.vertx:vertx-junit5")
     testImplementation("org.junit.jupiter:junit-jupiter:$junitJupiterVersion")
 }
