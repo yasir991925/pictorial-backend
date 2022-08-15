@@ -79,25 +79,24 @@ public class MainVerticle extends AbstractVerticle {
         SockJSHandler sockJSHandler = SockJSHandler.create(vertx);
         SockJSBridgeOptions options = new SockJSBridgeOptions();
 
-        String inBounds_regexp = "(([a-zA-Z0-9]+)-){4}(([a-zA-Z0-9]+)-*)(back)*";
-        String outBounds_regexp = "(([a-zA-Z0-9]+)-){4}([a-zA-Z0-9]+)";
+        String outBounds_regexp = "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$";
 
-        PermittedOptions inBoundPermitted_test = new PermittedOptions().setAddress("test_back");
+        String outBounds_regexp_test = "([0-9])";
+        PermittedOptions outBoundPermitted_test_reg = new PermittedOptions().setAddressRegex(outBounds_regexp_test);
 
         PermittedOptions inBoundPermitted = new PermittedOptions().setAddressRegex("msg.back");
-        PermittedOptions inBoundPermitted_uuid = new PermittedOptions().setAddressRegex(inBounds_regexp);
-        PermittedOptions outBoundPermitted_uuid = new PermittedOptions().setAddress(outBounds_regexp);
+        PermittedOptions outBoundPermitted_uuid = new PermittedOptions().setAddressRegex(outBounds_regexp);
         options
-            .addInboundPermitted(inBoundPermitted_test)
             .addInboundPermitted(inBoundPermitted)
-            .addOutboundPermitted(outBoundPermitted_uuid);
+            .addOutboundPermitted(outBoundPermitted_uuid)
+            .addOutboundPermitted(outBoundPermitted_test_reg);
 
         router.route("/eventbus/*").subRouter(sockJSHandler.bridge(options));
 
         vertx.eventBus().consumer("msg.back", msg -> {
             JsonObject in_msg = new JsonObject(msg.body().toString());
             JsonObject payload = new JsonObject();
-            payload.put("message", msg.body());
+            payload.put("message", in_msg.getString("message"));
             payload.put("server", id.toString());
             payload.put("timestamp", System.currentTimeMillis());
             payload.put("roomId", in_msg.getString("roomId"));
@@ -109,8 +108,9 @@ public class MainVerticle extends AbstractVerticle {
             switch (message.type()) {
                 case PUSH:
                     String data = message.get(2).toString();
-                    String roomId = new JsonObject(message.get(2).toString()).getString("roomId");
+                    String roomId = new JsonObject(data).getString("roomId");
                     vertx.eventBus().publish(roomId, data);
+                    vertx.eventBus().publish("test.out", data);
                     break;
                 default:
                     break;
@@ -141,12 +141,19 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     private void joinGame(RoutingContext context) {
-        // need to check if the room is valid or not
-        // room become invalid if the it's not there in redis
-        // if the room's last_activity is > 30 mins
-        // allow the user to istablish ws connection
-        // return the room state stored in redis
-
+        // [x] need to check if the room is valid or not
+        // [x] room become invalid if the it's not there in redis
+        // [_] if the room's last_activity is > 30 mins
+        // [_] allow the user to istablish ws connection
+        // [_] return the room state stored in redis
+        UUID roomId = UUID.fromString(context.request().getParam("id"));
+        redis.get(roomId.toString()).onSuccess(res -> {
+            if (res == null) {
+                context.response().setStatusCode(404).end("No such room exists");
+            } else {
+                context.response().end(res.toString());
+            }
+        });
     }
 
 }
