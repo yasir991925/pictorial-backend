@@ -1,5 +1,6 @@
 package com.pictorial;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Future;
 import io.vertx.core.Promise;
@@ -17,6 +18,7 @@ import java.util.Arrays;
 import java.util.UUID;
 
 public class MainVerticle extends AbstractVerticle {
+    static ObjectMapper objectMapper = new ObjectMapper();
 
     UUID id;
     RedisAPI redis;
@@ -71,6 +73,7 @@ public class MainVerticle extends AbstractVerticle {
         router.get("/").handler(this::home);
         router.post("/game").handler(this::createGame);
         router.get("/game/:id").handler(this::joinGame);
+        router.get("/game/data/:id").handler(this::getGameData);
         return router;
     }
 
@@ -80,18 +83,25 @@ public class MainVerticle extends AbstractVerticle {
         SockJSBridgeOptions options = new SockJSBridgeOptions();
 
         String outBounds_regexp = "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$";
+        String outBounds_room_status = "^room.status.[0-9a-fA-F]{8}\\\\b-[0-9a-fA-F]{4}\\\\b-[0-9a-fA-F]{4}\\\\b-[0-9a-fA-F]{4}\\\\b-[0-9a-fA-F]{12}$";
 
         String outBounds_regexp_test = "([0-9])";
         PermittedOptions outBoundPermitted_test_reg = new PermittedOptions().setAddressRegex(outBounds_regexp_test);
 
         PermittedOptions inBoundPermitted = new PermittedOptions().setAddressRegex("msg.back");
         PermittedOptions outBoundPermitted_uuid = new PermittedOptions().setAddressRegex(outBounds_regexp);
+        PermittedOptions outBoundPermitted_room_status = new PermittedOptions().setAddressRegex(outBounds_room_status);
+
         options
             .addInboundPermitted(inBoundPermitted)
             .addOutboundPermitted(outBoundPermitted_uuid)
-            .addOutboundPermitted(outBoundPermitted_test_reg);
+            .addOutboundPermitted(outBoundPermitted_test_reg)
+            .addOutboundPermitted(outBoundPermitted_room_status);
 
-        router.route("/eventbus/*").subRouter(sockJSHandler.bridge(options));
+        router
+            .route("/eventbus/*")
+            .subRouter(sockJSHandler.bridge(options));
+
 
         vertx.eventBus().consumer("msg.back", msg -> {
             JsonObject in_msg = new JsonObject(msg.body().toString());
@@ -101,6 +111,11 @@ public class MainVerticle extends AbstractVerticle {
             payload.put("timestamp", System.currentTimeMillis());
             payload.put("roomId", in_msg.getString("roomId"));
             redis.publish("msg.redis", payload.encode());
+            redis.lpush(Arrays.asList("data." + in_msg.getString("roomId"), payload.encode()))
+                .onFailure(err -> {
+                    System.out.println("Error while pushing the data into list");
+                    System.out.println(err.getMessage());
+                });
         });
 
 
@@ -132,9 +147,9 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     private void createGame(RoutingContext context) {
-        // need to create a uuid // done
-        // need to create a store in redis to store the data for a room // done
-        // return the uuid to the user and create a url in frontend // front-end work
+        // [x] need to create a uuid
+        // [_] need to create a store in redis to store the data for a room
+        // [_] return the uuid to the user and create a url in frontend
         UUID id = UUID.randomUUID();
         redis.set(Arrays.asList(id.toString(), ""));
         context.response().end(id.toString());
@@ -154,6 +169,18 @@ public class MainVerticle extends AbstractVerticle {
                 context.response().end(res.toString());
             }
         });
+    }
+
+    private void getGameData(RoutingContext context) {
+        String roomId = "data." + context.pathParam("id");
+        redis
+            .lrange(roomId, "0", "-1")
+            .onSuccess(ar -> {
+                context.response().putHeader("Content-Type", "application/json").end(ar.toString());
+            })
+            .onFailure(ar -> {
+                context.response().setStatusCode(500).end("something failed " + ar.getMessage());
+            });
     }
 
 }

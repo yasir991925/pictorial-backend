@@ -4,6 +4,8 @@ services:
     web1:
         build: .
         container_name: web1
+        depends_on:
+            - redis
         ports:
             - "8081:8080"
         environment:
@@ -14,6 +16,8 @@ services:
     web2:
         build: .
         container_name: web2
+        depends_on:
+            - redis
         ports:
             - "8082:8080"
         environment:
@@ -24,6 +28,8 @@ services:
     web3:
         build: .
         container_name: web3
+        depends_on:
+            - redis
         ports:
             - "8083:8080"
         environment:
@@ -35,6 +41,8 @@ services:
         image: redis
         ports:
             - "6378:6379"
+        volumes:
+            - ./redis-volume:/data
 
     haproxy:
         image: haproxy
