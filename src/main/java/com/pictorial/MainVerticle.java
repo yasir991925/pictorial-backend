@@ -13,11 +13,17 @@ import io.vertx.ext.web.handler.sockjs.SockJSHandler;
 import io.vertx.redis.client.Redis;
 import io.vertx.redis.client.RedisAPI;
 import io.vertx.redis.client.RedisConnection;
+import io.vertx.redis.client.Response;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 public class MainVerticle extends AbstractVerticle {
+    private static final Logger log = LoggerFactory.getLogger(MainVerticle.class);
     static ObjectMapper objectMapper = new ObjectMapper();
 
     UUID id;
@@ -83,7 +89,7 @@ public class MainVerticle extends AbstractVerticle {
         SockJSBridgeOptions options = new SockJSBridgeOptions();
 
         String outBounds_regexp = "^[0-9a-fA-F]{8}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{4}\\b-[0-9a-fA-F]{12}$";
-        String outBounds_room_status = "^room.status.[0-9a-fA-F]{8}\\\\b-[0-9a-fA-F]{4}\\\\b-[0-9a-fA-F]{4}\\\\b-[0-9a-fA-F]{4}\\\\b-[0-9a-fA-F]{12}$";
+        String outBounds_room_status = "^room\\.metadata\\.[0-9a-fA-F]{8}\\-[0-9a-fA-F]{4}\\-[0-9a-fA-F]{4}\\-[0-9a-fA-F]{4}\\-[0-9a-fA-F]{12}$";
 
         String outBounds_regexp_test = "([0-9])";
         PermittedOptions outBoundPermitted_test_reg = new PermittedOptions().setAddressRegex(outBounds_regexp_test);
@@ -100,8 +106,32 @@ public class MainVerticle extends AbstractVerticle {
 
         router
             .route("/eventbus/*")
-            .subRouter(sockJSHandler.bridge(options));
+            .subRouter(sockJSHandler.bridge(options, e -> {
+                if (e.getRawMessage() != null) {
 
+                    System.out.println(e.getRawMessage().encode());
+                    String address = e.getRawMessage().getString("address");
+                    String redis_address = "room.metadata." + address;
+                    JsonObject headers = e.getRawMessage().getJsonObject("headers");
+                    String user = headers != null ? headers.getString("user", "") : "";
+
+                    switch (e.getRawMessage().getString("type")) {
+                        case "register":
+                            redis
+                                .sadd(Arrays.asList(redis_address, user))
+                                .onSuccess(res -> sendRoomUpdate(redis_address));
+                            break;
+                        case "unregister":
+                            redis
+                                .srem(Arrays.asList(redis_address, user))
+                                .onSuccess(res -> sendRoomUpdate(redis_address));
+                            break;
+                        default:
+                            break;
+                    }
+                }
+                e.complete(true);
+            }));
 
         vertx.eventBus().consumer("msg.back", msg -> {
             JsonObject in_msg = new JsonObject(msg.body().toString());
@@ -122,10 +152,12 @@ public class MainVerticle extends AbstractVerticle {
         redis_conn.handler(message -> {
             switch (message.type()) {
                 case PUSH:
-                    String data = message.get(2).toString();
-                    String roomId = new JsonObject(data).getString("roomId");
-                    vertx.eventBus().publish(roomId, data);
-                    vertx.eventBus().publish("test.out", data);
+                    if (message.get(0).toString().equals("message")) {
+                        String data = message.get(2).toString();
+                        String roomId = new JsonObject(data).getString("roomId");
+                        vertx.eventBus().publish(roomId, data);
+                        vertx.eventBus().publish("test.out", data);
+                    }
                     break;
                 default:
                     break;
@@ -133,6 +165,17 @@ public class MainVerticle extends AbstractVerticle {
         });
 
         redis.subscribe(Arrays.asList("msg.redis"));
+    }
+
+
+    public void sendRoomUpdate(String room) {
+        System.out.println("update - " + room);
+        redis
+            .smembers(room)
+            .onSuccess(res -> {
+                List<String> members = res.stream().map(Response::toString).collect(Collectors.toList());
+                vertx.eventBus().publish(room, members);
+            });
     }
 
 

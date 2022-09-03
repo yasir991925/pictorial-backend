@@ -37,9 +37,15 @@ dependencies {
     implementation("io.vertx:vertx-sockjs-service-proxy")
     implementation("io.vertx:vertx-redis-client")
     implementation("io.vertx:vertx-rabbitmq-client")
-    implementation("org.projectlombok:lombok:1.18.20")
+
+
     testImplementation("io.vertx:vertx-junit5")
     testImplementation("org.junit.jupiter:junit-jupiter:$junitJupiterVersion")
+
+    annotationProcessor ("org.projectlombok:lombok:1.18.20")
+    compileOnly ("org.projectlombok:lombok:1.18.20")
+    testAnnotationProcessor ("org.projectlombok:lombok:1.18.20")
+    testCompileOnly ("org.projectlombok:lombok:1.18.20")
 }
 
 java {
